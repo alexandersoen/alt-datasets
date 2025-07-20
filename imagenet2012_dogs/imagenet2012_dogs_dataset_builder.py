@@ -56,7 +56,6 @@ class NonDogDownSampler:
 
     def is_dog(self, record) -> bool:
         file_name = record["file_name"].decode("utf-8")
-        print(file_name)
         synset_id_str, *_ = file_name.split("_")
         synset_id = int(synset_id_str[1:])
 
