@@ -1,11 +1,12 @@
 [project]
-name = "cifar-100-noisy"
+name = "alt-datasets"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "mlcroissant>=1.0.12",
-    "tensorflow>=2.18.0",
-    "tensorflow-datasets>=4.9.7",
+  "tensorflow-datasets>=4.9.9",
+  "apache-beam>=2.70.0",
+  "tensorflow<=2.19.0; sys_platform == 'darwin'",
+  "array_record; sys_platform == 'linux'",
 ]
