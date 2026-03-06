@@ -3,11 +3,11 @@
 TODO: Coarse labels are not noise.
 """
 
-import numpy as np
-from typing import Generator, cast, Any
+from typing import Any, Generator, cast
 
-from tensorflow_datasets.core import download
+import numpy as np
 import tensorflow_datasets as tfds
+from tensorflow_datasets.core import download
 from tensorflow_datasets.image_classification.cifar import (
   _CIFAR_IMAGE_SHAPE,
   Cifar100,

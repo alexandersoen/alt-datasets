@@ -7,6 +7,7 @@ from tensorflow_datasets.core import FileFormat
 
 
 def generate_hist(builder_str: str, split_str: str = "train") -> list[int]:
+  print(builder_str)
   builder = tfds.builder(builder_str)
   if builder.info.file_format == FileFormat.ARRAY_RECORD:
     data = builder.as_data_source(split=split_str)
@@ -22,9 +23,9 @@ def generate_hist(builder_str: str, split_str: str = "train") -> list[int]:
 
 if __name__ == "__main__":
   print("Label Noise")
-  print(generate_hist("cifar100_noisy/label_noise_0"))
-  print(generate_hist("cifar100_noisy/label_noise_10"))
-  print(generate_hist("cifar100_noisy/label_noise_25"))
+  print(generate_hist("cifar100_noisy/noise_0"))
+  print(generate_hist("cifar100_noisy/noise_10"))
+  print(generate_hist("cifar100_noisy/noise_25"))
   print()
   print("Longtail")
   print(generate_hist("cifar100_longtail/head_100"))
