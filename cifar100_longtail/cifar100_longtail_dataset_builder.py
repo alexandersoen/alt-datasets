@@ -1,126 +1,102 @@
 """cifar100_longtail dataset."""
 
-import random
+import numpy as np
 from collections import Counter
-from typing import cast
+from typing import Generator, cast, Any
 
+from tensorflow_datasets.core import download
 import tensorflow_datasets as tfds
 from tensorflow_datasets.image_classification.cifar import (
-    _CIFAR_IMAGE_SHAPE,
-    Cifar100,
+  _CIFAR_IMAGE_SHAPE,
+  Cifar100,
 )
 
-_VERSION = tfds.core.Version("0.0.1")
-_RELEASE_NOTES = {
-    "0.0.1": "Initial dataset",
-}
+SEED = 42
+NUM_CLASSES = 100
 
-N_CLASSES = 100
-N_HEAD_CLASSES_LIST = [100, 50, 25]
+ExampleGenerator = Generator[tuple[int, Any], Any, None]
 
 
 class Cifar100LongtailConfig(tfds.core.BuilderConfig):
-    """BuilderConfig for Cifar100Longtail."""
+  def __init__(
+    self,
+    *,
+    num_head_classes: int,
+    head_size: int = 500,
+    tail_size: int = 50,
+    **kwargs: Any,
+  ) -> None:
+    """BuilderConfig for cifar100_longtail.
 
-    def __init__(
-        self, *, n_head_classes=N_CLASSES, n_instances_per_tail=50, **kwargs
-    ):
-        super().__init__(**kwargs)
-        self.n_head_classes = n_head_classes
-        self.n_instances_per_tail = n_instances_per_tail
-
-
-def _make_builder_configs():
-    config_list = []
-    for n_head_classes in N_HEAD_CLASSES_LIST:
-        name_str = f"head_{n_head_classes}"
-        description_str = f"num head classes = {n_head_classes} / {N_CLASSES}"
-        config_list.append(
-            Cifar100LongtailConfig(
-                name=name_str,
-                version=_VERSION,
-                release_notes=_RELEASE_NOTES,
-                description=description_str,
-                n_head_classes=n_head_classes,
-            )
-        )
-    return config_list
-
-
-class LongtailFilter:
-    def __init__(
-        self,
-        n_head_classes: int,
-        n_classes: int,
-        n_tail_instances: int,
-        seed: int,
-    ) -> None:
-        self.n_tail_classes = n_classes - n_head_classes
-
-        self.n_tail_instances = n_tail_instances
-        self.accepted_counter: Counter[int] = Counter()
-
-        self.seed = seed
-        self.class_ordering = list(range(n_classes))
-
-        random.seed(seed)
-        random.shuffle(self.class_ordering)
-
-    def filter(self, record) -> bool:
-        label = record["label"]
-        label_idx = self.class_ordering[label]
-
-        # Filter if in tail class + already accepted enough
-        if label_idx < self.n_tail_classes:
-            if self.accepted_counter[label_idx] >= self.n_tail_instances:
-                return True
-            else:
-                self.accepted_counter[label_idx] += 1
-
-        return False
+    Args:
+      num_head_classes: number of labels that are head class.
+      head_size: num of examples in a head class.
+      tail_size: num of examples in a tail class.
+      **kwargs: keyword arguments forwarded to super.
+    """
+    super().__init__(**kwargs)
+    self.num_head_classes = num_head_classes
+    self.head_size = head_size
+    self.tail_size = tail_size
 
 
 class Builder(Cifar100):
-    """DatasetBuilder for cifar100_label_noise dataset."""
+  """DatasetBuilder for cifar100_label_noise dataset."""
 
-    BUILDER_CONFIGS = _make_builder_configs()
-    SEED = 42
+  VERSION = tfds.core.Version("0.0.2")
+  BUILDER_CONFIGS = [
+    Cifar100LongtailConfig(name="head_100", num_head_classes=100),
+    Cifar100LongtailConfig(name="head_50", num_head_classes=50),
+    Cifar100LongtailConfig(name="head_25", num_head_classes=25),
+  ]
 
-    def _info(self):
-        return tfds.core.DatasetInfo(
-            builder=self,
-            description=(
-                "The CIFAR-10 dataset consists of 60000 32x32 colour "
-                "images in 10 classes, with 6000 images per class. There "
-                "are 50000 training images and 10000 test images."
-            ),
-            features=tfds.features.FeaturesDict(
-                {
-                    "id": tfds.features.Text(),
-                    "image": tfds.features.Image(shape=_CIFAR_IMAGE_SHAPE),
-                    "label": tfds.features.ClassLabel(num_classes=N_CLASSES),
-                    "coarse_label": tfds.features.ClassLabel(num_classes=20),
-                }
-            ),
-            supervised_keys=("image", "label"),
-        )
+  def _info(self):
+    return tfds.core.DatasetInfo(
+      builder=self,
+      description="The CIFAR-100 filtered to long-tail dataset.",
+      features=tfds.features.FeaturesDict(
+        {
+          "id": tfds.features.Text(),
+          "image": tfds.features.Image(shape=_CIFAR_IMAGE_SHAPE),
+          "label": tfds.features.ClassLabel(num_classes=NUM_CLASSES),
+          "coarse_label": tfds.features.ClassLabel(num_classes=20),
+        }
+      ),
+      supervised_keys=("image", "label"),
+    )
 
-    def _split_generators(self, dl_manager):
-        return super()._split_generators(dl_manager)
+  def _split_generators(
+    self, dl_manager: download.DownloadManager
+  ) -> dict[str, ExampleGenerator]:
+    """ """
+    return super()._split_generators(dl_manager)
 
-    def _generate_examples(self, split_prefix, filepaths):
-        gen_fn = super()._generate_examples(split_prefix, filepaths)
+  def _generate_examples(
+    self, split_prefix: str, filepaths: list[str]
+  ) -> ExampleGenerator:
+    """ """
+    rng = np.random.RandomState(seed=SEED)
+    build_config = cast(Cifar100LongtailConfig, self.builder_config)
 
-        build_config = cast(Cifar100LongtailConfig, self.builder_config)
-        longtail_filter = LongtailFilter(
-            build_config.n_head_classes,
-            N_CLASSES,
-            build_config.n_instances_per_tail,
-            seed=self.SEED,
-        )
+    # Just read into memory as cifar100 is "small"
+    all_examples = list(super()._generate_examples(split_prefix, filepaths))
 
-        for key, example in gen_fn:
-            if longtail_filter.filter(example):
-                continue
+    class_order = np.arange(NUM_CLASSES)
+    rng.shuffle(class_order)
+    head_classes = set(class_order[: build_config.num_head_classes])
 
-            yield key, example
+    counter = Counter()
+    for key, example in all_examples:
+      label = example["label"]
+
+      if label in head_classes:
+        target_count = build_config.head_size
+      else:
+        target_count = build_config.tail_size
+
+      if counter[label] >= target_count:
+        continue
+
+      counter[label] += 1
+
+      yield key, example

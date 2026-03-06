@@ -3,131 +3,85 @@
 TODO: Coarse labels are not noise.
 """
 
-import random
-from typing import cast
+import numpy as np
+from typing import Generator, cast, Any
 
+from tensorflow_datasets.core import download
 import tensorflow_datasets as tfds
 from tensorflow_datasets.image_classification.cifar import (
-    _CIFAR_IMAGE_SHAPE,
-    Cifar100,
+  _CIFAR_IMAGE_SHAPE,
+  Cifar100,
 )
 
-_VERSION = tfds.core.Version("0.0.1")
-_RELEASE_NOTES = {
-    "0.0.1": "Initial dataset",
-}
+SEED = 42
+NUM_CLASSES = 100
 
-N_CLASSES = 100
-N_NOISY_CLASSES_LIST = [0, 10, 25]
+ExampleGenerator = Generator[tuple[int, Any], Any, None]
 
 
 class Cifar100NoisyConfig(tfds.core.BuilderConfig):
-    """BuilderConfig for Cifar100Noisy."""
+  def __init__(self, *, num_noisy_classes: int, **kwargs: Any) -> None:
+    """BuilderConfig for cifar100_label_noise.
 
-    def __init__(self, *, n_noisy_classes=0, **kwargs):
-        """BuilderConfig for Imagenet2012Corrupted.
-
-        Args:
-          num_class_noisy: integer, number of classes with label noise
-          **kwargs: keyword arguments forwarded to super.
-        """
-        super().__init__(**kwargs)
-        self.n_noisy_classes = n_noisy_classes
-
-
-def _make_builder_configs():
-    """Construct a list of BuilderConfigs.
-
-    Construct a list of 95 Imagenet2012CorruptedConfig objects, corresponding to
-    the 15 + 4 corruption types, with each type having 5 severities.
-
-    Returns:
-      A list of 95 Imagenet2012CorruptedConfig objects.
+    Args:
+      num_noisy_classes: number of classes with label noise.
+      **kwargs: keyword arguments forwarded to super.
     """
-    config_list = []
-    for n_noisy_classes in N_NOISY_CLASSES_LIST:
-        name_str = f"label_noise_{n_noisy_classes}"
-        description_str = (
-            f"num classes with uniform label noise = {n_noisy_classes}"
-        )
-        config_list.append(
-            Cifar100NoisyConfig(
-                name=name_str,
-                version=_VERSION,
-                release_notes=_RELEASE_NOTES,
-                description=description_str,
-                n_noisy_classes=n_noisy_classes,
-            )
-        )
-    return config_list
-
-
-class NoiseGenerator:
-    def __init__(
-        self,
-        n_noisy_classes: int,
-        n_classes: int,
-        seed: int,
-    ) -> None:
-        self.n_noisy_classes = n_noisy_classes
-        self.n_classes = n_classes
-
-        self.seed = seed
-        self.class_ordering = list(range(n_classes))
-
-        random.seed(seed)
-        random.shuffle(self.class_ordering)
-
-    def add_noise(self, record):
-        label = record["label"]
-        label_idx = self.class_ordering[label]
-
-        if label_idx < self.n_noisy_classes:
-            record["label"] = random.randrange(self.n_classes)
-
-        return record
+    super().__init__(**kwargs)
+    self.num_noisy_classes = num_noisy_classes
 
 
 class Builder(Cifar100):
-    """DatasetBuilder for cifar100_label_noise dataset."""
+  """DatasetBuilder for cifar100_label_noise dataset."""
 
-    BUILDER_CONFIGS = _make_builder_configs()
-    SEED = 42
+  VERSION = tfds.core.Version("0.0.2")
+  BUILDER_CONFIGS = [
+    Cifar100NoisyConfig(name="noise_0", num_noisy_classes=0, description="No noise."),
+    Cifar100NoisyConfig(
+      name="noise_10", num_noisy_classes=10, description="10 classes are noise."
+    ),
+    Cifar100NoisyConfig(
+      name="noise_25", num_noisy_classes=25, description="25 classes are noise."
+    ),
+  ]
+  SEED = 42
 
-    def _info(self):
-        return tfds.core.DatasetInfo(
-            builder=self,
-            description=(
-                "The CIFAR-10 dataset consists of 60000 32x32 colour "
-                "images in 10 classes, with 6000 images per class. There "
-                "are 50000 training images and 10000 test images."
-            ),
-            features=tfds.features.FeaturesDict(
-                {
-                    "id": tfds.features.Text(),
-                    "image": tfds.features.Image(shape=_CIFAR_IMAGE_SHAPE),
-                    "label": tfds.features.ClassLabel(num_classes=N_CLASSES),
-                    "coarse_label": tfds.features.ClassLabel(num_classes=20),
-                }
-            ),
-            supervised_keys=("image", "label"),
-        )
+  def _info(self):
+    return tfds.core.DatasetInfo(
+      builder=self,
+      description="The CIFAR-100 with label noise.",
+      features=tfds.features.FeaturesDict(
+        {
+          "id": tfds.features.Text(),
+          "image": tfds.features.Image(shape=_CIFAR_IMAGE_SHAPE),
+          "label": tfds.features.ClassLabel(num_classes=NUM_CLASSES),
+          "coarse_label": tfds.features.ClassLabel(num_classes=20),
+        }
+      ),
+      supervised_keys=("image", "label"),
+    )
 
-    def _split_generators(self, dl_manager):
-        return super()._split_generators(dl_manager)
+  def _split_generators(
+    self, dl_manager: download.DownloadManager
+  ) -> dict[str, ExampleGenerator]:
+    """ """
+    return super()._split_generators(dl_manager)
 
-    def _generate_examples(self, split_prefix, filepaths):
-        gen_fn = super()._generate_examples(split_prefix, filepaths)
-        random.seed(self.SEED)
+  def _generate_examples(
+    self, split_prefix: str, filepaths: list[str]
+  ) -> ExampleGenerator:
+    """ """
+    rng = np.random.RandomState(seed=SEED)
+    build_config = cast(Cifar100NoisyConfig, self.builder_config)
 
-        build_config = cast(Cifar100NoisyConfig, self.builder_config)
-        noisy_generator = NoiseGenerator(
-            build_config.n_noisy_classes,
-            N_CLASSES,
-            seed=self.SEED,
-        )
+    gen_fn = super()._generate_examples(split_prefix, filepaths)
 
-        for key, example in gen_fn:
-            example = noisy_generator.add_noise(example)
+    class_order = np.arange(NUM_CLASSES)
+    rng.shuffle(class_order)
+    noise_classes = set(class_order[: build_config.num_noisy_classes])
 
-            yield key, example
+    for key, example in gen_fn:
+      if example["label"] in noise_classes:
+        example["label"] = rng.randint(low=0, high=NUM_CLASSES)
+
+      yield (key, example)
