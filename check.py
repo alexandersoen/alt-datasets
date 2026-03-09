@@ -22,6 +22,7 @@ def generate_hist(builder_str: str, split_str: str = "train") -> list[int]:
 
 
 if __name__ == "__main__":
+  print("============= TRAIN =============")
   print("Label Noise")
   print(generate_hist("cifar100_noisy/noise_0"))
   print(generate_hist("cifar100_noisy/noise_10"))
@@ -31,3 +32,28 @@ if __name__ == "__main__":
   print(generate_hist("cifar100_longtail/head_100"))
   print(generate_hist("cifar100_longtail/head_50"))
   print(generate_hist("cifar100_longtail/head_25"))
+  print("============= TRAIN =============\n")
+
+  print("============= VAL =============")
+  print("Label Noise")
+  print(generate_hist("cifar100_noisy/noise_0", "test[:5000]"))
+  print(generate_hist("cifar100_noisy/noise_10", "test[:5000]"))
+  print(generate_hist("cifar100_noisy/noise_25", "test[:5000]"))
+  print()
+  print("Longtail")
+  print(generate_hist("cifar100_longtail/head_100", "test[:5000]"))
+  print(generate_hist("cifar100_longtail/head_50", "test[:5000]"))
+  print(generate_hist("cifar100_longtail/head_25", "test[:5000]"))
+  print("============= VAL =============\n")
+
+  print("============= TEST =============")
+  print("Label Noise")
+  print(generate_hist("cifar100_noisy/noise_0", "test[5000:]"))
+  print(generate_hist("cifar100_noisy/noise_10", "test[5000:]"))
+  print(generate_hist("cifar100_noisy/noise_25", "test[5000:]"))
+  print()
+  print("Longtail")
+  print(generate_hist("cifar100_longtail/head_100", "test[5000:]"))
+  print(generate_hist("cifar100_longtail/head_50", "test[5000:]"))
+  print(generate_hist("cifar100_longtail/head_25", "test[5000:]"))
+  print("============= TEST =============\n")
