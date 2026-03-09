@@ -3,20 +3,34 @@
 TODO: Coarse labels are not noise.
 """
 
-from typing import Any, Generator, cast
+from itertools import tee
+from typing import Any, cast
 
 import numpy as np
 import tensorflow_datasets as tfds
 from tensorflow_datasets.core import download
-from tensorflow_datasets.image_classification.cifar import (
-  _CIFAR_IMAGE_SHAPE,
-  Cifar100,
-)
+from tensorflow_datasets.image_classification.cifar import Cifar100
 
-SEED = 42
+from shared.utils import ExampleGenerator, ignore_first_n, select_first_n
+
 NUM_CLASSES = 100
+TRAIN_SPLIT_IDX = 45_000
 
-ExampleGenerator = Generator[tuple[int, Any], Any, None]
+
+def _apply_label_noise(
+  examples: ExampleGenerator, num_noisy_classes: int, seed: int
+) -> ExampleGenerator:
+  """Apply label noise to the configured number of classes."""
+  rng = np.random.RandomState(seed=seed)
+  class_order = np.arange(NUM_CLASSES)
+  rng.shuffle(class_order)
+  noise_classes = set(class_order[:num_noisy_classes])
+
+  for key, example in examples:
+    if example["label"] in noise_classes:
+      example["label"] = int(rng.randint(low=0, high=NUM_CLASSES))
+
+    yield key, example
 
 
 class Cifar100NoisyConfig(tfds.core.BuilderConfig):
@@ -34,7 +48,7 @@ class Cifar100NoisyConfig(tfds.core.BuilderConfig):
 class Builder(Cifar100):
   """DatasetBuilder for cifar100_label_noise dataset."""
 
-  VERSION = tfds.core.Version("0.0.2")
+  VERSION = tfds.core.Version("0.0.4")
   BUILDER_CONFIGS = [
     Cifar100NoisyConfig(name="noise_0", num_noisy_classes=0, description="No noise."),
     Cifar100NoisyConfig(
@@ -46,42 +60,21 @@ class Builder(Cifar100):
   ]
   SEED = 42
 
-  def _info(self):
-    return tfds.core.DatasetInfo(
-      builder=self,
-      description="The CIFAR-100 with label noise.",
-      features=tfds.features.FeaturesDict(
-        {
-          "id": tfds.features.Text(),
-          "image": tfds.features.Image(shape=_CIFAR_IMAGE_SHAPE),
-          "label": tfds.features.ClassLabel(num_classes=NUM_CLASSES),
-          "coarse_label": tfds.features.ClassLabel(num_classes=20),
-        }
-      ),
-      supervised_keys=("image", "label"),
-    )
-
   def _split_generators(
     self, dl_manager: download.DownloadManager
   ) -> dict[str, ExampleGenerator]:
-    """ """
-    return super()._split_generators(dl_manager)
-
-  def _generate_examples(
-    self, split_prefix: str, filepaths: list[str]
-  ) -> ExampleGenerator:
-    """ """
-    rng = np.random.RandomState(seed=SEED)
+    """Override to create train, validation, and test splits."""
+    splits = super()._split_generators(dl_manager)
     build_config = cast(Cifar100NoisyConfig, self.builder_config)
 
-    gen_fn = super()._generate_examples(split_prefix, filepaths)
+    train_gen, val_gen = tee(splits["train"], 2)
+    res = {
+      "train": ignore_first_n(train_gen, 50),
+      "validation": select_first_n(val_gen, 50),
+      "test": splits["test"],
+    }
 
-    class_order = np.arange(NUM_CLASSES)
-    rng.shuffle(class_order)
-    noise_classes = set(class_order[: build_config.num_noisy_classes])
-
-    for key, example in gen_fn:
-      if example["label"] in noise_classes:
-        example["label"] = rng.randint(low=0, high=NUM_CLASSES)
-
-      yield (key, example)
+    res["train"] = _apply_label_noise(
+      res["train"], build_config.num_noisy_classes, self.SEED
+    )
+    return res

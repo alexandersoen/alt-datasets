@@ -1,20 +1,48 @@
 """cifar100_longtail dataset."""
 
 from collections import Counter
-from typing import Any, Generator, cast
+from itertools import tee
+from typing import Any, cast
 
 import numpy as np
 import tensorflow_datasets as tfds
 from tensorflow_datasets.core import download
-from tensorflow_datasets.image_classification.cifar import (
-  _CIFAR_IMAGE_SHAPE,
-  Cifar100,
-)
+from tensorflow_datasets.image_classification.cifar import Cifar100
 
-SEED = 42
+from shared.utils import ExampleGenerator, ignore_first_n, select_first_n
+
 NUM_CLASSES = 100
 
-ExampleGenerator = Generator[tuple[int, Any], Any, None]
+
+def _apply_longtail_filter(
+  examples: ExampleGenerator,
+  num_head_classes: int,
+  head_size: int,
+  tail_size: int,
+  seed: int,
+) -> ExampleGenerator:
+  """Apply label noise to the configured number of classes."""
+  rng = np.random.RandomState(seed=seed)
+  class_order = np.arange(NUM_CLASSES)
+  rng.shuffle(class_order)
+
+  head_classes = set(class_order[:num_head_classes])
+
+  counter = Counter()
+  for key, example in examples:
+    label = example["label"]
+
+    if label in head_classes:
+      target_count = head_size
+    else:
+      target_count = tail_size
+
+    if counter[label] >= target_count:
+      continue
+
+    counter[label] += 1
+
+    yield key, example
 
 
 class Cifar100LongtailConfig(tfds.core.BuilderConfig):
@@ -41,62 +69,36 @@ class Cifar100LongtailConfig(tfds.core.BuilderConfig):
 
 
 class Builder(Cifar100):
-  """DatasetBuilder for cifar100_label_noise dataset."""
+  """DatasetBuilder for cifar100_longtail dataset."""
 
-  VERSION = tfds.core.Version("0.0.2")
+  VERSION = tfds.core.Version("0.0.4")
   BUILDER_CONFIGS = [
     Cifar100LongtailConfig(name="head_100", num_head_classes=100),
     Cifar100LongtailConfig(name="head_50", num_head_classes=50),
     Cifar100LongtailConfig(name="head_25", num_head_classes=25),
   ]
-
-  def _info(self):
-    return tfds.core.DatasetInfo(
-      builder=self,
-      description="The CIFAR-100 filtered to long-tail dataset.",
-      features=tfds.features.FeaturesDict(
-        {
-          "id": tfds.features.Text(),
-          "image": tfds.features.Image(shape=_CIFAR_IMAGE_SHAPE),
-          "label": tfds.features.ClassLabel(num_classes=NUM_CLASSES),
-          "coarse_label": tfds.features.ClassLabel(num_classes=20),
-        }
-      ),
-      supervised_keys=("image", "label"),
-    )
+  SEED = 42
 
   def _split_generators(
     self, dl_manager: download.DownloadManager
   ) -> dict[str, ExampleGenerator]:
-    """ """
-    return super()._split_generators(dl_manager)
-
-  def _generate_examples(
-    self, split_prefix: str, filepaths: list[str]
-  ) -> ExampleGenerator:
-    """ """
-    rng = np.random.RandomState(seed=SEED)
+    """Override to create train, validation, and test splits."""
+    splits = super()._split_generators(dl_manager)
     build_config = cast(Cifar100LongtailConfig, self.builder_config)
 
-    # Just read into memory as cifar100 is "small"
-    all_examples = list(super()._generate_examples(split_prefix, filepaths))
+    train_gen, val_gen = tee(splits["train"], 2)
+    res = {
+      "train": ignore_first_n(train_gen, 50),
+      "validation": select_first_n(val_gen, 50),
+      "test": splits["test"],
+    }
 
-    class_order = np.arange(NUM_CLASSES)
-    rng.shuffle(class_order)
-    head_classes = set(class_order[: build_config.num_head_classes])
+    res["train"] = _apply_longtail_filter(
+      res["train"],
+      build_config.num_head_classes,
+      build_config.head_size,
+      build_config.tail_size,
+      seed=self.SEED,
+    )
 
-    counter = Counter()
-    for key, example in all_examples:
-      label = example["label"]
-
-      if label in head_classes:
-        target_count = build_config.head_size
-      else:
-        target_count = build_config.tail_size
-
-      if counter[label] >= target_count:
-        continue
-
-      counter[label] += 1
-
-      yield key, example
+    return res
