@@ -1,4 +1,4 @@
-TODO(cifar100_label_noise): Markdown description of that will appear on the catalog page.
+TODO(cifar100_labelnoise): Markdown description of that will appear on the catalog page.
 Description is **formatted** as markdown.
 
 It should also contain any processing which has been applied (if any),

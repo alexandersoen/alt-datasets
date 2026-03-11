@@ -4,7 +4,6 @@ from collections import Counter
 from itertools import tee
 from typing import Any, cast
 
-import numpy as np
 import tensorflow_datasets as tfds
 from tensorflow_datasets.core import download
 from tensorflow_datasets.image_classification.cifar import Cifar100
@@ -19,14 +18,9 @@ def _apply_longtail_filter(
   num_head_classes: int,
   head_size: int,
   tail_size: int,
-  seed: int,
 ) -> ExampleGenerator:
-  """Apply label noise to the configured number of classes."""
-  rng = np.random.RandomState(seed=seed)
-  class_order = np.arange(NUM_CLASSES)
-  rng.shuffle(class_order)
-
-  head_classes = set(class_order[:num_head_classes])
+  """Apply longtail filtering with head classes 0..num_head_classes-1."""
+  head_classes = set(range(num_head_classes))
 
   counter = Counter()
   for key, example in examples:
@@ -77,7 +71,6 @@ class Builder(Cifar100):
     Cifar100LongtailConfig(name="head_50", num_head_classes=50),
     Cifar100LongtailConfig(name="head_25", num_head_classes=25),
   ]
-  SEED = 42
 
   def _split_generators(
     self, dl_manager: download.DownloadManager
@@ -98,7 +91,6 @@ class Builder(Cifar100):
       build_config.num_head_classes,
       build_config.head_size,
       build_config.tail_size,
-      seed=self.SEED,
     )
 
     return res

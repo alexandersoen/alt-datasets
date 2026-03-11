@@ -1,12 +1,12 @@
-"""cifar100_noisy dataset."""
+"""cifar100_labelnoise dataset."""
 
-from . import cifar100_noisy_dataset_builder
+from . import cifar100_labelnoise_dataset_builder
 import tensorflow_datasets as tfds
 
-class Cifar100NoisyTest(tfds.testing.DatasetBuilderTestCase):
-  """Tests for cifar100_noisy dataset."""
-  # TODO(cifar100_noisy):
-  DATASET_CLASS = cifar100_noisy_dataset_builder.Builder
+class Cifar100LabelNoiseTest(tfds.testing.DatasetBuilderTestCase):
+  """Tests for cifar100_labelnoise dataset."""
+  # TODO(cifar100_labelnoise):
+  DATASET_CLASS = cifar100_labelnoise_dataset_builder.Builder
   SPLITS = {
       'train': 3,  # Number of fake train example
       'test': 1,  # Number of fake test example
