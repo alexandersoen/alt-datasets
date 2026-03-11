@@ -11,6 +11,7 @@ from tensorflow_datasets.image_classification.cifar import Cifar100
 from shared.utils import ExampleGenerator, ignore_first_n, select_first_n
 
 NUM_CLASSES = 100
+EXAMPLES_PER_CLASS = 500
 
 
 def _apply_longtail_filter(
@@ -44,7 +45,7 @@ class Cifar100LongtailConfig(tfds.core.BuilderConfig):
     self,
     *,
     num_head_classes: int,
-    head_size: int = 500,
+    head_size: int = 450,
     tail_size: int = 50,
     **kwargs: Any,
   ) -> None:
@@ -57,6 +58,12 @@ class Cifar100LongtailConfig(tfds.core.BuilderConfig):
       **kwargs: keyword arguments forwarded to super.
     """
     super().__init__(**kwargs)
+
+    if head_size + tail_size != EXAMPLES_PER_CLASS:
+      raise ValueError(
+        "Head size + tail size does not equal number of examples per class"
+      )
+
     self.num_head_classes = num_head_classes
     self.head_size = head_size
     self.tail_size = tail_size
