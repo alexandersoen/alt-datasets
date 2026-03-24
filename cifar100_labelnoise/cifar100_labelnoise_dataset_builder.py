@@ -36,6 +36,16 @@ def _apply_label_noise(
     yield key, example
 
 
+def _annotate_noise_flag(
+  examples: ExampleGenerator,
+  is_noise: int = 0,
+) -> ExampleGenerator:
+  """Annotate examples with a default noise flag without relabeling."""
+  for key, example in examples:
+    example["is_noise"] = is_noise
+    yield key, example
+
+
 class Cifar100LabelNoiseConfig(tfds.core.BuilderConfig):
   def __init__(self, *, num_noisy_classes: int, **kwargs: Any) -> None:
     """BuilderConfig for cifar100_labelnoise.
@@ -104,9 +114,7 @@ class Builder(Cifar100):
     }
 
     for split_name, split_examples in res.items():
-      res[split_name] = (
-        (key, {**example, "is_noise": 0}) for key, example in split_examples
-      )
+      res[split_name] = _annotate_noise_flag(split_examples)
 
     res["train"] = _apply_label_noise(
       res["train"], build_config.num_noisy_classes, self.SEED

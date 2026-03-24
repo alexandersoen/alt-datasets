@@ -11,7 +11,7 @@ from tensorflow_datasets.image_classification.cifar import Cifar100
 from shared.utils import ExampleGenerator, ignore_first_n, select_first_n
 
 SEED = 42
-NONSPECIALIST_PERC_LIST = [100, 4, 2]
+NONSPECIALIST_PERC_LIST = [100, 20, 10]
 
 MAMMAL_SPECIALIST_FINE_LABELS_BY_COARSE = {
   "aquatic_mammals": ("beaver", "dolphin", "otter", "seal", "whale"),
@@ -34,7 +34,6 @@ def _specialist_group_description() -> str:
 
 def _apply_specialist_filter(
   examples: ExampleGenerator,
-  specialist_coarse_labels: AbstractSet[int],
   nonspecialist_perc: int,
   seed: int,
 ) -> ExampleGenerator:
@@ -43,11 +42,18 @@ def _apply_specialist_filter(
   nonspecialist_prob = nonspecialist_perc / 100.0
 
   for key, example in examples:
-    is_specialist = int(example["coarse_label"] in specialist_coarse_labels)
-    example["is_specialist"] = is_specialist
-
-    if is_specialist or rng.binomial(1, nonspecialist_prob):
+    if example["is_specialist"] or rng.binomial(1, nonspecialist_prob):
       yield key, example
+
+
+def _annotate_specialist_flag(
+  examples: ExampleGenerator,
+  specialist_coarse_labels: AbstractSet[int],
+) -> ExampleGenerator:
+  """Annotate examples with specialist membership without filtering."""
+  for key, example in examples:
+    example["is_specialist"] = int(example["coarse_label"] in specialist_coarse_labels)
+    yield key, example
 
 
 class Cifar100SpecialistConfig(tfds.core.BuilderConfig):
@@ -112,7 +118,7 @@ class Builder(Cifar100):
     splits = super()._split_generators(dl_manager)
     build_config = cast(Cifar100SpecialistConfig, self.builder_config)
 
-    features = cast(tfds.features.FeaturesDict, super()._info().features)
+    features = cast(tfds.features.FeaturesDict, self.info.features)
     coarse_feature = cast(tfds.features.ClassLabel, features["coarse_label"])
     specialist_coarse_labels = {
       idx
@@ -127,12 +133,15 @@ class Builder(Cifar100):
       "test": splits["test"],
     }
 
-    return {
-      split_name: _apply_specialist_filter(
-        split_examples,
-        specialist_coarse_labels,
-        build_config.nonspecialist_perc,
-        SEED,
+    for split_name, split_examples in res.items():
+      res[split_name] = _annotate_specialist_flag(
+        split_examples, specialist_coarse_labels
       )
-      for split_name, split_examples in res.items()
-    }
+
+    res["train"] = _apply_specialist_filter(
+      res["train"],
+      build_config.nonspecialist_perc,
+      SEED,
+    )
+
+    return res

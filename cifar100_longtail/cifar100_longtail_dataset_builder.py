@@ -26,7 +26,6 @@ def _apply_longtail_filter(
   counter = Counter()
   for key, example in examples:
     label = example["label"]
-    example["is_head"] = int(label in head_classes)
 
     if label in head_classes:
       target_count = head_size
@@ -38,6 +37,16 @@ def _apply_longtail_filter(
 
     counter[label] += 1
 
+    yield key, example
+
+
+def _annotate_head_flag(
+  examples: ExampleGenerator,
+  head_classes: set[int],
+) -> ExampleGenerator:
+  """Annotate examples with head-class membership without filtering."""
+  for key, example in examples:
+    example["is_head"] = int(example["label"] in head_classes)
     yield key, example
 
 
@@ -114,10 +123,7 @@ class Builder(Cifar100):
 
     head_classes = set(range(build_config.num_head_classes))
     for split_name, split_examples in res.items():
-      res[split_name] = (
-        (key, {**example, "is_head": int(example["label"] in head_classes)})
-        for key, example in split_examples
-      )
+      res[split_name] = _annotate_head_flag(split_examples, head_classes)
 
     res["train"] = _apply_longtail_filter(
       res["train"],
