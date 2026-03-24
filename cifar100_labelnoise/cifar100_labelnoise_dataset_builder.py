@@ -24,8 +24,14 @@ def _apply_label_noise(
   noise_classes = set(range(num_noisy_classes))
 
   for key, example in examples:
-    if example["label"] in noise_classes:
-      example["label"] = int(rng.randint(low=0, high=NUM_CLASSES))
+    original_label = int(example["label"])
+    is_corrupted = 0
+    if original_label in noise_classes:
+      new_label = int(rng.randint(low=0, high=NUM_CLASSES))
+      is_corrupted = int(new_label != original_label)
+      example["label"] = new_label
+
+    example["is_noise"] = is_corrupted
 
     yield key, example
 
@@ -65,6 +71,24 @@ class Builder(Cifar100):
   ]
   SEED = 42
 
+  def _info(self) -> tfds.core.DatasetInfo:
+    """Returns the dataset metadata."""
+    info = super()._info()
+    inherited_features = cast(tfds.features.FeaturesDict, info.features)
+    return tfds.core.DatasetInfo(
+      builder=self,
+      description=info.description,
+      features=tfds.features.FeaturesDict(
+        {
+          **inherited_features,
+          "is_noise": tfds.features.ClassLabel(num_classes=2),
+        }
+      ),
+      supervised_keys=info.supervised_keys,
+      homepage=info.homepage,
+      citation=info.citation,
+    )
+
   def _split_generators(
     self, dl_manager: download.DownloadManager
   ) -> dict[str, ExampleGenerator]:
@@ -78,6 +102,11 @@ class Builder(Cifar100):
       "validation": select_first_n(val_gen, 50),
       "test": splits["test"],
     }
+
+    for split_name, split_examples in res.items():
+      res[split_name] = (
+        (key, {**example, "is_noise": 0}) for key, example in split_examples
+      )
 
     res["train"] = _apply_label_noise(
       res["train"], build_config.num_noisy_classes, self.SEED

@@ -6,6 +6,8 @@ This package includes:
 
 - `cifar100_labelnoise`: label noise applied to classes `0..n-1`
 - `cifar100_longtail`: class-imbalance variants with head/tail truncation
+- `cifar100_specialist`: specialist-biased variants with full specialist-class
+  coverage and downsampled non-specialist classes
 
 ## Build instructions
 

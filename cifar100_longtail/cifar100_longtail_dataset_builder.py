@@ -26,6 +26,7 @@ def _apply_longtail_filter(
   counter = Counter()
   for key, example in examples:
     label = example["label"]
+    example["is_head"] = int(label in head_classes)
 
     if label in head_classes:
       target_count = head_size
@@ -79,6 +80,24 @@ class Builder(Cifar100):
     Cifar100LongtailConfig(name="head_25", num_head_classes=25),
   ]
 
+  def _info(self) -> tfds.core.DatasetInfo:
+    """Returns the dataset metadata."""
+    info = super()._info()
+    inherited_features = cast(tfds.features.FeaturesDict, info.features)
+    return tfds.core.DatasetInfo(
+      builder=self,
+      description=info.description,
+      features=tfds.features.FeaturesDict(
+        {
+          **inherited_features,
+          "is_head": tfds.features.ClassLabel(num_classes=2),
+        }
+      ),
+      supervised_keys=info.supervised_keys,
+      homepage=info.homepage,
+      citation=info.citation,
+    )
+
   def _split_generators(
     self, dl_manager: download.DownloadManager
   ) -> dict[str, ExampleGenerator]:
@@ -92,6 +111,13 @@ class Builder(Cifar100):
       "validation": select_first_n(val_gen, 50),
       "test": splits["test"],
     }
+
+    head_classes = set(range(build_config.num_head_classes))
+    for split_name, split_examples in res.items():
+      res[split_name] = (
+        (key, {**example, "is_head": int(example["label"] in head_classes)})
+        for key, example in split_examples
+      )
 
     res["train"] = _apply_longtail_filter(
       res["train"],
