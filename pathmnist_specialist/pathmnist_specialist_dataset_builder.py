@@ -1,12 +1,11 @@
 """PathMNIST specialist dataset."""
 
-from typing import Any, BinaryIO, cast
+from typing import Any, cast
 
-import numpy as np
-import numpy.typing as npt
 import tensorflow_datasets.public_api as tfds
-from tensorflow_datasets.core.utils.lazy_imports_utils import tensorflow as tf
 
+from shared.corrupt import keep_specialist_and_sample_rest
+from shared.medmnist import build_splits, generate_examples, load_npz
 from shared.utils import ExampleGenerator
 
 _PATHMNIST_URL = "https://zenodo.org/records/10519652/files/pathmnist.npz"
@@ -53,37 +52,6 @@ def _make_builder_configs() -> list[PathMNISTSpecialistConfig]:
     )
     for nonspecialist_perc in _NONSPECIALIST_PERC_LIST
   ]
-
-
-def _annotate_specialist_flag(
-  images: npt.NDArray[np.uint8],
-  labels: npt.NDArray[np.integer[Any]],
-) -> ExampleGenerator:
-  for idx, (image, label) in enumerate(zip(images, labels)):
-    class_id = int(np.squeeze(label))
-    yield (
-      idx,
-      {
-        "image": image,
-        "label": class_id,
-        "is_specialist": int(class_id in _PATHMNIST_SPECIALIST_LABELS),
-      },
-    )
-
-
-def _filter_specialist_examples(
-  examples: ExampleGenerator,
-  nonspecialist_perc: int,
-  seed: int,
-) -> ExampleGenerator:
-  rng = np.random.RandomState(seed=seed)
-  nonspecialist_prob = nonspecialist_perc / 100.0
-
-  for key, example in examples:
-    if example["is_specialist"] or rng.binomial(1, nonspecialist_prob):
-      yield key, example
-
-
 class Builder(tfds.core.GeneratorBasedBuilder):
   """DatasetBuilder for pathmnist_specialist dataset."""
 
@@ -111,38 +79,34 @@ class Builder(tfds.core.GeneratorBasedBuilder):
     self, dl_manager: tfds.download.DownloadManager
   ) -> dict[str, ExampleGenerator]:
     """Returns SplitGenerators."""
-    npz_path = dl_manager.download(_PATHMNIST_URL)
-
-    with tf.io.gfile.GFile(npz_path, "rb") as f:
-      raw_data = np.load(cast(BinaryIO, f))
-
+    raw_data = load_npz(dl_manager, _PATHMNIST_URL)
     build_config = cast(PathMNISTSpecialistConfig, self.builder_config)
-
-    return {
-      "train": self._generate_examples(
-        raw_data["train_images"],
-        raw_data["train_labels"],
-        nonspecialist_perc=build_config.nonspecialist_perc,
-      ),
-      "validation": self._generate_examples(
-        raw_data["val_images"],
-        raw_data["val_labels"],
-      ),
-      "test": self._generate_examples(
-        raw_data["test_images"],
-        raw_data["test_labels"],
-      ),
-    }
+    return build_splits(
+      raw_data,
+      self._generate_examples,
+      train_kwargs={"nonspecialist_perc": build_config.nonspecialist_perc},
+    )
 
   def _generate_examples(
     self,
-    images: npt.NDArray[np.uint8],
-    labels: npt.NDArray[np.integer[Any]],
+    images: Any,
+    labels: Any,
     nonspecialist_perc: int | None = None,
   ) -> ExampleGenerator:
     """Yields examples."""
-    examples = _annotate_specialist_flag(images, labels)
+    examples = generate_examples(
+      images,
+      labels,
+      extra_fields_fn=lambda class_id: {
+        "is_specialist": int(class_id in _PATHMNIST_SPECIALIST_LABELS)
+      },
+    )
     if nonspecialist_perc is not None:
-      examples = _filter_specialist_examples(examples, nonspecialist_perc, _SEED)
+      examples = keep_specialist_and_sample_rest(
+        examples,
+        specialist_field="is_specialist",
+        nonspecialist_perc=nonspecialist_perc,
+        seed=_SEED,
+      )
 
     yield from examples

@@ -3,47 +3,19 @@
 TODO: Coarse labels are not noise.
 """
 
-from itertools import tee
 from typing import Any, cast
 
-import numpy as np
 import tensorflow_datasets as tfds
 from tensorflow_datasets.core import download
 from tensorflow_datasets.image_classification.cifar import Cifar100
 
-from shared.utils import ExampleGenerator, ignore_first_n, select_first_n
+from shared.corrupt import (
+  annotate_constant_flag,
+  apply_uniform_label_noise,
+)
+from shared.utils import ExampleGenerator, split_train_validation
 
 NUM_CLASSES = 100
-
-
-def _apply_label_noise(
-  examples: ExampleGenerator, num_noisy_classes: int, seed: int
-) -> ExampleGenerator:
-  """Apply paper-style label noise to classes 0..num_noisy_classes-1."""
-  rng = np.random.RandomState(seed=seed)
-  noise_classes = set(range(num_noisy_classes))
-
-  for key, example in examples:
-    original_label = int(example["label"])
-    is_corrupted = 0
-    if original_label in noise_classes:
-      new_label = int(rng.randint(low=0, high=NUM_CLASSES))
-      is_corrupted = int(new_label != original_label)
-      example["label"] = new_label
-
-    example["is_noise"] = is_corrupted
-
-    yield key, example
-
-
-def _annotate_noise_flag(
-  examples: ExampleGenerator,
-  is_noise: int = 0,
-) -> ExampleGenerator:
-  """Annotate examples with a default noise flag without relabeling."""
-  for key, example in examples:
-    example["is_noise"] = is_noise
-    yield key, example
 
 
 class Cifar100LabelNoiseConfig(tfds.core.BuilderConfig):
@@ -103,20 +75,20 @@ class Builder(Cifar100):
     self, dl_manager: download.DownloadManager
   ) -> dict[str, ExampleGenerator]:
     """Override to create train, validation, and test splits."""
-    splits = super()._split_generators(dl_manager)
+    splits = cast(dict[str, ExampleGenerator], super()._split_generators(dl_manager))
     build_config = cast(Cifar100LabelNoiseConfig, self.builder_config)
 
-    train_gen, val_gen = tee(splits["train"], 2)
-    res = {
-      "train": ignore_first_n(train_gen, 50),
-      "validation": select_first_n(val_gen, 50),
-      "test": splits["test"],
-    }
+    res = split_train_validation(splits, validation_examples_per_class=50)
 
     for split_name, split_examples in res.items():
-      res[split_name] = _annotate_noise_flag(split_examples)
+      res[split_name] = annotate_constant_flag(split_examples, "is_noise")
+      res[split_name] = apply_uniform_label_noise(
+        res[split_name],
+        label_field="label",
+        noise_flag_field="is_noise",
+        noisy_labels=set(range(build_config.num_noisy_classes)),
+        num_classes=NUM_CLASSES,
+        seed=self.SEED,
+      )
 
-    res["train"] = _apply_label_noise(
-      res["train"], build_config.num_noisy_classes, self.SEED
-    )
     return res

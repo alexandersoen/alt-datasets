@@ -1,12 +1,8 @@
 """DermaMNIST dataset."""
 
-from typing import Any, BinaryIO, cast
-
-import numpy as np
-import numpy.typing as npt
 import tensorflow_datasets.public_api as tfds
-from tensorflow_datasets.core.utils.lazy_imports_utils import tensorflow as tf
 
+from shared.medmnist import build_splits, generate_examples, load_npz
 from shared.utils import ExampleGenerator
 
 _DERMAMNIST_URL = "https://zenodo.org/records/10519652/files/dermamnist.npz"
@@ -37,32 +33,5 @@ class Builder(tfds.core.GeneratorBasedBuilder):
     self, dl_manager: tfds.download.DownloadManager
   ) -> dict[str, ExampleGenerator]:
     """Returns SplitGenerators."""
-    npz_path = dl_manager.download(_DERMAMNIST_URL)
-
-    with tf.io.gfile.GFile(npz_path, "rb") as f:
-      raw_data = np.load(cast(BinaryIO, f))
-
-    return {
-      "train": self._generate_examples(
-        raw_data["train_images"], raw_data["train_labels"]
-      ),
-      "validation": self._generate_examples(
-        raw_data["val_images"], raw_data["val_labels"]
-      ),
-      "test": self._generate_examples(raw_data["test_images"], raw_data["test_labels"]),
-    }
-
-  def _generate_examples(
-    self,
-    images: npt.NDArray[np.uint8],
-    labels: npt.NDArray[np.integer[Any]],
-  ) -> ExampleGenerator:
-    """Yields examples."""
-    for idx, (image, label) in enumerate(zip(images, labels)):
-      yield (
-        idx,
-        {
-          "image": image,
-          "label": int(np.squeeze(label)),
-        },
-      )
+    raw_data = load_npz(dl_manager, _DERMAMNIST_URL)
+    return build_splits(raw_data, generate_examples)

@@ -1,53 +1,16 @@
 """cifar100_longtail dataset."""
 
-from collections import Counter
-from itertools import tee
 from typing import Any, cast
 
 import tensorflow_datasets as tfds
 from tensorflow_datasets.core import download
 from tensorflow_datasets.image_classification.cifar import Cifar100
 
-from shared.utils import ExampleGenerator, ignore_first_n, select_first_n
+from shared.corrupt import annotate_binary_flag, cap_examples_per_class
+from shared.utils import ExampleGenerator, split_train_validation
 
 NUM_CLASSES = 100
 EXAMPLES_PER_CLASS = 500
-
-
-def _apply_longtail_filter(
-  examples: ExampleGenerator,
-  num_head_classes: int,
-  head_size: int,
-  tail_size: int,
-) -> ExampleGenerator:
-  """Apply longtail filtering with head classes 0..num_head_classes-1."""
-  head_classes = set(range(num_head_classes))
-
-  counter = Counter()
-  for key, example in examples:
-    label = example["label"]
-
-    if label in head_classes:
-      target_count = head_size
-    else:
-      target_count = tail_size
-
-    if counter[label] >= target_count:
-      continue
-
-    counter[label] += 1
-
-    yield key, example
-
-
-def _annotate_head_flag(
-  examples: ExampleGenerator,
-  head_classes: set[int],
-) -> ExampleGenerator:
-  """Annotate examples with head-class membership without filtering."""
-  for key, example in examples:
-    example["is_head"] = int(example["label"] in head_classes)
-    yield key, example
 
 
 class Cifar100LongtailConfig(tfds.core.BuilderConfig):
@@ -111,25 +74,29 @@ class Builder(Cifar100):
     self, dl_manager: download.DownloadManager
   ) -> dict[str, ExampleGenerator]:
     """Override to create train, validation, and test splits."""
-    splits = super()._split_generators(dl_manager)
+    splits = cast(dict[str, ExampleGenerator], super()._split_generators(dl_manager))
     build_config = cast(Cifar100LongtailConfig, self.builder_config)
 
-    train_gen, val_gen = tee(splits["train"], 2)
-    res = {
-      "train": ignore_first_n(train_gen, 50),
-      "validation": select_first_n(val_gen, 50),
-      "test": splits["test"],
-    }
+    def target_count_fn(label: int) -> int:
+      return (
+        build_config.head_size
+        if label < build_config.num_head_classes
+        else build_config.tail_size
+      )
+
+    res = split_train_validation(splits, validation_examples_per_class=50)
 
     head_classes = set(range(build_config.num_head_classes))
     for split_name, split_examples in res.items():
-      res[split_name] = _annotate_head_flag(split_examples, head_classes)
-
-    res["train"] = _apply_longtail_filter(
-      res["train"],
-      build_config.num_head_classes,
-      build_config.head_size,
-      build_config.tail_size,
-    )
+      res[split_name] = annotate_binary_flag(
+        split_examples,
+        "is_head",
+        lambda example: example["label"] in head_classes,
+      )
+      res[split_name] = cap_examples_per_class(
+        res[split_name],
+        label_field="label",
+        target_count_fn=target_count_fn,
+      )
 
     return res

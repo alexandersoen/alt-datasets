@@ -1,11 +1,14 @@
 """Shared utility functions."""
 
 from collections import Counter
-from typing import Any, Generator, Iterator
+from itertools import tee
+from typing import Any, Generator, Iterator, Mapping, TypeAlias
 
-Example = tuple[int, Any]
-ExampleGenerator = Generator[Example, Any, None]
-ExampleIterator = Iterator[Example]
+ExampleRecord: TypeAlias = dict[str, Any]
+ExampleKey: TypeAlias = Any
+Example: TypeAlias = tuple[ExampleKey, ExampleRecord]
+ExampleGenerator: TypeAlias = Generator[Example, Any, None]
+ExampleIterator: TypeAlias = Iterator[Example]
 
 
 def select_first_n(examples: ExampleIterator, n: int) -> ExampleGenerator:
@@ -35,3 +38,16 @@ def ignore_first_n(examples: ExampleIterator, n: int) -> ExampleGenerator:
       continue
 
     yield key, example
+
+
+def split_train_validation(
+  splits: Mapping[str, ExampleGenerator],
+  validation_examples_per_class: int,
+) -> dict[str, ExampleGenerator]:
+  """Split a training generator into train/validation by label class."""
+  train_gen, val_gen = tee(splits["train"], 2)
+  return {
+    "train": ignore_first_n(train_gen, validation_examples_per_class),
+    "validation": select_first_n(val_gen, validation_examples_per_class),
+    "test": splits["test"],
+  }

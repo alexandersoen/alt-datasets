@@ -1,14 +1,16 @@
 """cifar100_specialist dataset."""
 
-from itertools import tee
-from typing import AbstractSet, Any, cast
+from typing import Any, cast
 
-import numpy as np
 import tensorflow_datasets as tfds
 from tensorflow_datasets.core import download
 from tensorflow_datasets.image_classification.cifar import Cifar100
 
-from shared.utils import ExampleGenerator, ignore_first_n, select_first_n
+from shared.corrupt import (
+  annotate_binary_flag,
+  keep_specialist_and_sample_rest,
+)
+from shared.utils import ExampleGenerator, split_train_validation
 
 SEED = 42
 NONSPECIALIST_PERC_LIST = [100, 20, 10]
@@ -30,30 +32,6 @@ MAMMAL_SPECIALIST_FINE_LABELS_BY_COARSE = {
 
 def _specialist_group_description() -> str:
   return ", ".join(MAMMAL_SPECIALIST_FINE_LABELS_BY_COARSE)
-
-
-def _apply_specialist_filter(
-  examples: ExampleGenerator,
-  nonspecialist_perc: int,
-  seed: int,
-) -> ExampleGenerator:
-  """Keep all specialist examples and a fraction of non-specialist examples."""
-  rng = np.random.RandomState(seed=seed)
-  nonspecialist_prob = nonspecialist_perc / 100.0
-
-  for key, example in examples:
-    if example["is_specialist"] or rng.binomial(1, nonspecialist_prob):
-      yield key, example
-
-
-def _annotate_specialist_flag(
-  examples: ExampleGenerator,
-  specialist_coarse_labels: AbstractSet[int],
-) -> ExampleGenerator:
-  """Annotate examples with specialist membership without filtering."""
-  for key, example in examples:
-    example["is_specialist"] = int(example["coarse_label"] in specialist_coarse_labels)
-    yield key, example
 
 
 class Cifar100SpecialistConfig(tfds.core.BuilderConfig):
@@ -115,7 +93,7 @@ class Builder(Cifar100):
     self, dl_manager: download.DownloadManager
   ) -> dict[str, ExampleGenerator]:
     """Returns SplitGenerators."""
-    splits = super()._split_generators(dl_manager)
+    splits = cast(dict[str, ExampleGenerator], super()._split_generators(dl_manager))
     build_config = cast(Cifar100SpecialistConfig, self.builder_config)
 
     features = cast(tfds.features.FeaturesDict, self.info.features)
@@ -126,22 +104,19 @@ class Builder(Cifar100):
       if coarse_name in MAMMAL_SPECIALIST_FINE_LABELS_BY_COARSE
     }
 
-    train_gen, val_gen = tee(splits["train"], 2)
-    res = {
-      "train": ignore_first_n(train_gen, 50),
-      "validation": select_first_n(val_gen, 50),
-      "test": splits["test"],
-    }
+    res = split_train_validation(splits, validation_examples_per_class=50)
 
     for split_name, split_examples in res.items():
-      res[split_name] = _annotate_specialist_flag(
-        split_examples, specialist_coarse_labels
+      res[split_name] = annotate_binary_flag(
+        split_examples,
+        "is_specialist",
+        lambda example: example["coarse_label"] in specialist_coarse_labels,
       )
-
-    res["train"] = _apply_specialist_filter(
-      res["train"],
-      build_config.nonspecialist_perc,
-      SEED,
-    )
+      res[split_name] = keep_specialist_and_sample_rest(
+        res[split_name],
+        specialist_field="is_specialist",
+        nonspecialist_perc=build_config.nonspecialist_perc,
+        seed=SEED,
+      )
 
     return res
