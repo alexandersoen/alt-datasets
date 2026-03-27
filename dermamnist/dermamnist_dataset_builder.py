@@ -1,5 +1,7 @@
 """DermaMNIST dataset."""
 
+from typing import Any
+
 import tensorflow_datasets.public_api as tfds
 
 from shared.medmnist import build_splits, generate_examples, load_npz
@@ -34,4 +36,12 @@ class Builder(tfds.core.GeneratorBasedBuilder):
   ) -> dict[str, ExampleGenerator]:
     """Returns SplitGenerators."""
     raw_data = load_npz(dl_manager, _DERMAMNIST_URL)
-    return build_splits(raw_data, generate_examples)
+    return build_splits(raw_data, self._generate_examples)
+
+  def _generate_examples(
+    self,
+    images: Any,
+    labels: Any,
+  ) -> ExampleGenerator:
+    """Yields examples."""
+    yield from generate_examples(images, labels)
